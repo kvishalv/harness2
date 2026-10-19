@@ -28,6 +28,7 @@ installed — so it catches an unset or unbuilt judge, not one an account cannot
     python3 -m harness2.cli.run_sweep --bench jb --substrate oc --k 2 --split all
     python3 -m harness2.cli.run_sweep --bench wb --subset web --substrate cx \\
         --k 1 --split all --seed 7 --modes parallel --max-tasks 2 --dry-run
+    python3 -m harness2.cli.run_sweep --bench local --tasks-dir ./my-tasks --k 1
 """
 
 from __future__ import annotations
@@ -71,6 +72,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "exit — no rollouts, no sessions, nothing written",
     )
     return p
+
+
+def _make_adapter(args: argparse.Namespace):
+    return C.make_adapter(
+        args.bench,
+        args.subset,
+        args.substrate,
+        args.split_file,
+        tasks_dir=args.tasks_dir,
+        base_harness=args.base_harness,
+    )
 
 
 def _csv(raw: str) -> tuple[str, ...]:
@@ -134,15 +146,13 @@ def _main(args: argparse.Namespace) -> int:
     modes = C.parse_modes(args.modes)
 
     if args.dry_run:
-        return _print_stream(
-            C.make_adapter(args.bench, args.subset, args.substrate, args.split_file), args, modes
-        )
+        return _print_stream(_make_adapter(args), args, modes)
 
-    adapter = C.make_adapter(args.bench, args.subset, args.substrate, args.split_file)
+    adapter = _make_adapter(args)
     _stream_for(adapter, args)
     from ..preflight import require_ready
 
-    require_ready(adapter, judge=True)
+    require_ready(adapter, judge=args.bench != "local")  # local: verify command, no judge model
 
     runs_root = C.runs_root_for(adapter)
     library_root = C.library_root_for(adapter, args.k, seed=args.seed)

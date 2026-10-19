@@ -27,7 +27,7 @@ from ..core import library as LIB
 from ..core import schedule as SCHED
 from ..core.spec import BenchmarkAdapter
 
-BENCHES = ("jb", "wb", "lab")
+BENCHES = ("jb", "wb", "lab", "local")
 WB_SUBSETS = ("office", "web", "code")
 SUBSTRATES = ("oc", "cx")
 
@@ -43,13 +43,29 @@ class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescript
 
 
 def make_adapter(
-    bench: str, subset: str | None, substrate: str, split_file: Path | None = None
+    bench: str,
+    subset: str | None,
+    substrate: str,
+    split_file: Path | None = None,
+    *,
+    tasks_dir: Path | None = None,
+    base_harness: Path | None = None,
 ) -> BenchmarkAdapter:
     """The one place a CLI turns (--bench, --subset, --substrate) into an adapter."""
     if bench not in BENCHES:
         raise ValueError(f"unknown bench {bench!r}; expected one of {BENCHES}")
     if substrate not in SUBSTRATES:
         raise ValueError(f"unknown substrate {substrate!r}; expected one of {SUBSTRATES}")
+    if bench == "local":
+        if tasks_dir is None:
+            raise ValueError("--bench local needs --tasks-dir <folder of <domain>/<task>/>")
+        if substrate != "oc" or subset:
+            raise ValueError("--bench local runs on the oc substrate and takes no --subset")
+        from ..benchmarks.local import LocalAdapter
+
+        return LocalAdapter(tasks_dir, base_harness=base_harness, split_file=split_file)
+    if tasks_dir or base_harness:
+        raise ValueError(f"--tasks-dir and --base-harness apply to --bench local only, not {bench}")
     if bench == "wb":
         if subset not in WB_SUBSETS:
             raise ValueError(f"--bench wb needs --subset from {WB_SUBSETS}, got {subset!r} ")
@@ -96,7 +112,7 @@ def summary_namespace(adapter: BenchmarkAdapter, k: int, *, seed: int | None, ta
 
 def add_cell_args(p: argparse._ActionsContainer) -> None:
     """The (benchmark, substrate) cell selectors; `p` may be a parser or an argument group."""
-    p.add_argument("--bench", required=True, choices=BENCHES, help="jb | wb | lab")
+    p.add_argument("--bench", required=True, choices=BENCHES, help="jb | wb | lab | local")
     p.add_argument(
         "--subset", default=None, choices=WB_SUBSETS, help="WB only: office | web | code"
     )
@@ -105,6 +121,16 @@ def add_cell_args(p: argparse._ActionsContainer) -> None:
         default="oc",
         choices=SUBSTRATES,
         help="task-executor substrate: oc (opencode) | cx (codex)",
+    )
+    p.add_argument(
+        "--tasks-dir",
+        type=Path,
+        help="local only: folder of <domain>/<task>/task.md (docs/LOCAL.md)",
+    )
+    p.add_argument(
+        "--base-harness",
+        type=Path,
+        help="local only: your own c1..c8 tree to start from (default: bare OpenCode)",
     )
 
 
